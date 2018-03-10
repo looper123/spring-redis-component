@@ -8,7 +8,8 @@
 
     <bean id="valueSerilizer" class="org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer"/>
 
-    <bean id="jedisConnectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory" p:hostName="172.26.186.21" p:port="6379" p:usePool="true"/>
+    <bean id="jedisConnectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory" p:hostName="192.168.194.130" p:port="6379" p:usePool="true"
+    p:timeout="60000"/>
 
     <bean id="stringRedisTemplate" class="org.springframework.data.redis.core.StringRedisTemplate" >
         <property name="connectionFactory" ref="jedisConnectionFactory"/>
@@ -21,6 +22,7 @@
         <constructor-arg>
             <bean class="com.quark.redis.sub.configuration.DefaultMessageDelegate"/>
         </constructor-arg>
+        <property name="serializer" ref="valueSerilizer"/>
     </bean>
 
     <bean id="redisContainer" class="org.springframework.data.redis.listener.RedisMessageListenerContainer">

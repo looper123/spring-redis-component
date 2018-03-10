@@ -8,5 +8,5 @@ import org.springframework.context.annotation.ImportResource;
  */
 @Configuration
 @ImportResource(locations = {"classpath:spring-redis.xml"})
-public class MyConfig {
+public class MyRedisConfig {
 }
