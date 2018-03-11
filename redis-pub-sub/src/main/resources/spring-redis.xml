@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!--sentinel pool config-->
+    <!-- spring 会寻找sentinel 监控的redis 节点  所有的redis 命令其实是 sentinel 节点中配置的监控节点执行的-->
+    <!--使用了sentinelconfig 后无法再使用redis的cluster功能 因为在sentinelconfig 底层使用了jedis连接 而当哨兵连接到cluster时 向集群中的
+    其他节点发送command时 需要用clusterconfig -->
+    <bean name="sentinelConfig" class="org.springframework.data.redis.connection.RedisSentinelConfiguration">
+        <constructor-arg name="master" value="mymaster"/>
+        <!--<constructor-arg name="sentinelHostAndPorts"  value="192.168.194.130:26379,192.168.194.132:26379">-->
+        <constructor-arg name="sentinelHostAndPorts" >
+            <set>
+                <!--哨兵节点集合-->
+                <value type="java.lang.String">192.168.194.132:26380</value>
+                <value type="java.lang.String">192.168.194.130:26379</value>
+            </set>
+        </constructor-arg>
+    </bean>
+
+    <!-- common pool config-->
+    <bean name="jedisPoolConfig" class="redis.clients.jedis.JedisPoolConfig">
+        <property name="maxTotal" value="3000"/>
+        <property name="maxIdle" value="500"/>
+        <property name="minIdle" value="10"/>
+        <property name="maxWaitMillis" value="3000"/>
+        <property name="testOnBorrow" value="true"/>
+        <property name="testOnReturn" value="true"/>
+    </bean>
+
+
+    <!--cluster pool config -->
+    <bean name="clusterConfig" class="org.springframework.data.redis.connection.RedisClusterConfiguration">
+        <!--<property name="clusterNodes" >-->
+        <property name="clusterNodes">
+            <set>
+                <bean name="redisNode"  class="org.springframework.data.redis.connection.RedisNode">
+                    <constructor-arg name="host" value="192.168.194.130"/>
+                    <constructor-arg name="port" value="7000" type="int"/>
+                </bean>
+                <bean name="redisNode"  class="org.springframework.data.redis.connection.RedisNode">
+                    <constructor-arg name="host" value="192.168.194.130"/>
+                    <constructor-arg name="port" value="7001" type="int"/>
+                </bean>
+                <bean name="redisNode"  class="org.springframework.data.redis.connection.RedisNode">
+                    <constructor-arg name="host" value="192.168.194.130"/>
+                    <constructor-arg name="port" value="7002" type="int"/>
+                </bean>
+                <bean name="redisNode"  class="org.springframework.data.redis.connection.RedisNode">
+                    <constructor-arg name="host" value="192.168.194.132"/>
+                    <constructor-arg name="port" value="7003" type="int"/>
+                </bean>
+                <bean name="redisNode"  class="org.springframework.data.redis.connection.RedisNode">
+                    <constructor-arg name="host" value="192.168.194.132"/>
+                    <constructor-arg name="port" value="7004" type="int"/>
+                </bean>
+                <bean name="redisNode"  class="org.springframework.data.redis.connection.RedisNode">
+                    <constructor-arg name="host" value="192.168.194.132"/>
+                    <constructor-arg name="port" value="7005" type="int"/>
+                </bean>
+            </set>
+        </property>
+    </bean>
+
+    <!--spring redis sentinel or cluster-->
+    <!--sentinel config 和 cluster config 只需要选一个-->
+    <!--注意 spring 对sentinel 和 cluster的支持也只能二选一
+     在spring 下sentinel 监控的底层redis节点不能是集群模式（不支持）
+    -->
+    <bean name="jedisConnectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory">
+        <property name="poolConfig" ref="jedisPoolConfig"/>
+        <constructor-arg name="sentinelConfig" ref="sentinelConfig"/>
+        <!--<constructor-arg name="clusterConfig" ref="clusterConfig"/>-->
+    </bean>
+
+    <!--redistemplate-->
+    <bean name="myRedisTemplate"  class="org.springframework.data.redis.core.RedisTemplate">
+        <property name="keySerializer"  ref="keySerializer" />
+        <property name="hashKeySerializer"  ref="keySerializer" />
+        <property name="valueSerializer" ref="valueSerializer"/>
+        <property name="hashValueSerializer" ref="valueSerializer"/>
+        <property name="connectionFactory" ref="jedisConnectionFactory"/>
+    </bean>
+
+
+    <!--delegates the handling of messages to target listener methods via reflection-->
+    <bean id="messageListener" class="org.springframework.data.redis.listener.adapter.MessageListenerAdapter">
+        <constructor-arg>
+            <bean class="com.quark.redis.message.delegate.DefaultMessageDelegate"/>
+        </constructor-arg>
+        <property name="serializer" ref="valueSerializer"/>
+    </bean>
+
+    <!--providing asynchronous behaviour for Redis message listeners-->
+    <bean id="redisContainer" class="org.springframework.data.redis.listener.RedisMessageListenerContainer">
+        <property name="connectionFactory" ref="jedisConnectionFactory"/>
+        <property name="messageListeners">
+            <map>
+                <entry key-ref="messageListener">
+                    <bean class="org.springframework.data.redis.listener.ChannelTopic">
+                        <constructor-arg value="channel_1"/>
+                    </bean>
+                </entry>
+            </map>
+        </property>
+    </bean>
+
+
+    <!--key & value serializer-->
+    <bean name="keySerializer" class="org.springframework.data.redis.serializer.StringRedisSerializer"/>
+    <bean name="valueSerializer" class="org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer"/>
+
+
+
+</beans>
