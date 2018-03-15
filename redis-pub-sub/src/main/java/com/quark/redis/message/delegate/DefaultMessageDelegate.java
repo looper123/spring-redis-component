@@ -3,11 +3,16 @@ package com.quark.redis.message.delegate;
 
 import com.google.gson.Gson;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.RedisNode;
+import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
+import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.JedisSentinelPool;
 
-import java.util.List;
-import java.util.Map;
+import javax.annotation.Resource;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -19,6 +24,12 @@ public class DefaultMessageDelegate implements MessageDelegate {
 
     @Autowired
     private RedisTemplate myRedisTemplate;
+
+    @Autowired
+    private RedisSentinelConfiguration sentinelConfig;
+
+    @Autowired
+    private JedisPoolConfig jedisPoolConfig;
     /**
      * note 默认取回的message是object类型的
      * 而在MessageListenerAdapter中  {@link org.springframework.data.redis.listener.adapter.MessageListenerAdapter}
@@ -30,14 +41,20 @@ public class DefaultMessageDelegate implements MessageDelegate {
     @Override
     public void handleMessage(String message) {
         System.out.println("receiving the string message....");
+        //可以通过此方法 完成 json 到 java bean的转化
         Map<String,Object> map = new Gson().fromJson(message, Map.class);
         String serial_no = (String)map.get("serial_no");
+        System.out.println("message handing starting.....");
         if(checkHandingStatus(serial_no)){
+            System.out.println("message handing running.....");
             List dataList = (List)map.get("data_list");
             for(int i = 0; i<dataList.size();i++){
                 System.out.println("data_element-----"+dataList.get(i));
             }
-            System.out.println(message+"---this is a string message");
+            System.out.println("message handing end.....");
+        }
+            //message处理完成后删除key
+//            myRedisTemplate.delete("syn_data_"+ serial_no);
             //保存完毕删除key
 //            myRedisTemplate.delete("syn_data_" + serial_no);
 //            lua script 实现锁的释放
@@ -56,7 +73,7 @@ public class DefaultMessageDelegate implements MessageDelegate {
 //                    return script;
 //                }
 //            }, Collections.singletonList("syn_data_" + serial_no), Collections.singletonList(serial_no));
-        }
+
     }
 
 //    @Override
@@ -86,14 +103,45 @@ public class DefaultMessageDelegate implements MessageDelegate {
 //            e.printStackTrace();
 //        }
         //集群服务下让处理逻辑只执行一次
-        String  oldValue =  (String) myRedisTemplate.opsForValue().getAndSet("syn_data_"+ serial_no,serial_no);
-        if(oldValue == null){
-            //设置超时时间
-            Boolean setExpire = myRedisTemplate.expire("syn_data_" + serial_no, 1000L, TimeUnit.SECONDS);
-            return  true;
+        boolean  setStatus = setNxWithExpire("syn_data_" + serial_no,serial_no,"NX","EX",600);
+        return setStatus;
+    }
+
+
+    /**
+     * 当key不存在 才执行set（key,value,expiretime）操作
+     *{@link redis.clients.jedis.Jedis#set(String, String, String, String, long)}
+     * @param key
+     * @param value
+     * @param keyMark NX|XX, Only set the key if it does not already exist. XX -- Only set the key
+     * if it already exist
+     * @param timeMark EX|PX, expire time units: EX = seconds; PX = milliseconds
+     * @param time
+     * @return
+     */
+    public  boolean setNxWithExpire(String key ,String value ,String keyMark,String timeMark ,final long time){
+        JedisSentinelPool jedisSentinelPool = new JedisSentinelPool(sentinelConfig.getMaster().getName(), convertToJedisSentinelSet(sentinelConfig.getSentinels()),
+                jedisPoolConfig);
+        String status = jedisSentinelPool.getResource().set(key , value , keyMark, timeMark ,  time);
+        if("OK".equals(status)){
+            return true;
         }
         return false;
     }
+
+    private Set<String> convertToJedisSentinelSet(Set<RedisNode> sentinels) {
+        if (CollectionUtils.isEmpty(sentinels)) {
+            return Collections.emptySet();
+        }
+        Set<String> convertedNodes = new LinkedHashSet<String>(sentinels.size());
+        for (RedisNode node : sentinels) {
+            if (node != null) {
+                convertedNodes.add(node.asString());
+            }
+        }
+        return convertedNodes;
+    }
+
 
 
 }
